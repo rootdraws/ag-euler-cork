@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "euler-vaults": {
+      "source": "euler-xyz/agent-skills",
+      "sourceType": "github",
+      "computedHash": "b95d511ea3b33e8fc9007c9b2c122375263e313e357163e145eb1a395ac697e9"
+    }
+  }
+}
