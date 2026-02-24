@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+interface IERC4626EVCCollateralSecuritize {
+    error AlreadyInitialized();
+    error BadSupplyCap();
+    error ControllerDisabled();
+    error ERC20InsufficientAllowance(address spender, uint256 allowance, uint256 needed);
+    error ERC20InsufficientBalance(address sender, uint256 balance, uint256 needed);
+    error ERC20InvalidApprover(address approver);
+    error ERC20InvalidReceiver(address receiver);
+    error ERC20InvalidSender(address sender);
+    error ERC20InvalidSpender(address spender);
+    error ERC4626ExceededMaxDeposit(address receiver, uint256 assets, uint256 max);
+    error ERC4626ExceededMaxMint(address receiver, uint256 shares, uint256 max);
+    error ERC4626ExceededMaxRedeem(address owner, uint256 shares, uint256 max);
+    error ERC4626ExceededMaxWithdraw(address owner, uint256 assets, uint256 max);
+    error EVC_InvalidAddress();
+    error Frozen();
+    error InvalidAddress();
+    error NotAuthorized();
+    error Paused();
+    error Reentrancy();
+    error SafeERC20FailedOperation(address token);
+    error SupplyCapExceeded();
+    error ZeroAssets();
+    error ZeroShares();
+
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+    event Deposit(address indexed sender, address indexed owner, uint256 assets, uint256 shares);
+    event GovFrozen(bytes19 indexed addressPrefix);
+    event GovPaused();
+    event GovSeized(address indexed from, address indexed to, uint256 amount);
+    event GovSetControllerPerspective(address indexed controllerPerspective);
+    event GovSetGovernorAdmin(address indexed newGovernorAdmin);
+    event GovSetSupplyCap(uint16 newSupplyCap);
+    event GovUnfrozen(bytes19 indexed addressPrefix);
+    event GovUnpaused();
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Withdraw(
+        address indexed sender, address indexed receiver, address indexed owner, uint256 assets, uint256 shares
+    );
+
+    function EVC() external view returns (address);
+    function allowance(address holder, address spender) external view returns (uint256);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function asset() external view returns (address);
+    function balanceOf(address account) external view returns (uint256);
+    function balanceOfAddressPrefix(address account) external view returns (uint256);
+    function balanceOfAddressPrefix(bytes19 addressPrefix) external view returns (uint256);
+    function checkVaultStatus() external returns (bytes4 magicValue);
+    function controllerPerspective() external view returns (address);
+    function convertToAssets(uint256 shares) external view returns (uint256);
+    function convertToShares(uint256 assets) external view returns (uint256);
+    function decimals() external view returns (uint8);
+    function deposit(uint256 assets, address receiver) external returns (uint256 shares);
+    function freeze(bytes19 addressPrefix) external;
+    function governorAdmin() external view returns (address);
+    function isCommonOwner(address account, address otherAccount) external view returns (bool);
+    function isFrozen(address account) external view returns (bool);
+    function isFrozen(bytes19 addressPrefix) external view returns (bool);
+    function isPaused() external view returns (bool);
+    function isTransferCompliant(address to, uint256 amount) external view returns (bool);
+    function maxDeposit(address receiver) external view returns (uint256);
+    function maxMint(address receiver) external view returns (uint256);
+    function maxRedeem(address owner) external view returns (uint256);
+    function maxWithdraw(address owner) external view returns (uint256);
+    function mint(uint256 shares, address receiver) external returns (uint256 assets);
+    function name() external view returns (string memory);
+    function pause() external;
+    function permit2Address() external view returns (address);
+    function previewDeposit(uint256 assets) external view returns (uint256);
+    function previewMint(uint256 shares) external view returns (uint256);
+    function previewRedeem(uint256 shares) external view returns (uint256);
+    function previewWithdraw(uint256 assets) external view returns (uint256);
+    function redeem(uint256 shares, address receiver, address owner) external returns (uint256 assets);
+    function seize(address from, address to, uint256 amount) external returns (bool result);
+    function setControllerPerspective(address _controllerPerspective) external;
+    function setGovernorAdmin(address newGovernorAdmin) external;
+    function setSupplyCap(uint16 cap) external;
+    function supplyCap() external view returns (uint16);
+    function supplyCapResolved() external view returns (uint256);
+    function symbol() external view returns (string memory);
+    function totalAssets() external view returns (uint256);
+    function totalSupply() external view returns (uint256);
+    function transfer(address to, uint256 amount) external returns (bool result);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool result);
+    function unfreeze(bytes19 addressPrefix) external;
+    function unpause() external;
+    function withdraw(uint256 assets, address receiver, address owner) external returns (uint256 shares);
+}

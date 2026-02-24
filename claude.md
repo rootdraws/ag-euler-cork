@@ -420,3 +420,155 @@ The entities.json in each labels repo should include AG, Euler, and the partner 
 7. **Entity branding** (logos next to vault names) pulls from the labels repo's `logo/` directory. For custom logos, either use a custom labels repo or add files to `public/entities/` and reference them in your labels JSON.
 8. **Empty labels repo = empty frontend.** If your custom labels repo has `products.json` as `{}`, the UI shows zero vaults. This is expected — vault discovery is driven entirely by the labels repo, not the subgraph.
 9. **Labels are always fetched from GitHub raw URLs — no local path support.** `useEulerConfig.ts` line 27 hardcodes: `https://raw.githubusercontent.com/${labelsRepo}/refs/heads/${labelsRepoBranch}`. The workflow is: build JSON files locally → push to GitHub → app fetches at runtime. To support local paths you'd need to modify `useEulerConfig.ts`.
+
+---
+
+## Cork Smart Contracts — Protected Loop on Euler
+
+### The Spec
+
+Read `implementation.md` in the repo root FIRST. It is the complete implementation spec with all addresses, formulas, corrected code, and deployment sequence. Read `cork-docs/cork-euler.md` for the original Cork/Euler design spec. Read `TODO.md` for deployment runbook and remaining work. Read `firstprinciples.md` for the FP-1 investigation (balanceOf encoding trick — confirmed broken, resolved).
+
+### Current Status: All Contracts Written and Compiling
+
+All six items are done. Do NOT rewrite them. Read the existing files before touching anything.
+
+| Contract | File | Status |
+|---|---|---|
+| CorkOracleImpl | `euler-price-oracle-cork/src/adapter/cork/CorkOracleImpl.sol` | Standard BaseAdapter, compiles |
+| CSTZeroOracle | `euler-price-oracle-cork/src/adapter/cork/CSTZeroOracle.sol` | Standard BaseAdapter, compiles |
+| ERC4626EVCCollateralCork | `evk-periphery-cork/src/Vault/deployed/ERC4626EVCCollateralCork.sol` | Pairing overrides, compiles |
+| ProtectedLoopHook | `evk-periphery-cork/src/HookTarget/ProtectedLoopHook.sol` | Borrow-only hook, compiles |
+| CorkProtectedLoopLiquidator | `evk-periphery-cork/src/Liquidator/CorkProtectedLoopLiquidator.sol` | SafeERC20, compiles |
+| CorkProtectedLoop.s.sol | `evk-periphery-cork/script/production/mainnet/clusters/CorkProtectedLoop.s.sol` | 8-phase script, compiles |
+
+### Critical Architectural Facts — Read Before Touching Anything
+
+**1. ERC4626EVCCollateralCork has three overrides.**
+- `_withdraw`: enforces pairing invariant in ALL cases (debt AND no-debt, both vault types). REF vault blocks withdrawal if post-withdrawal REF would be uncovered. cST vault blocks all withdrawal when debt > 0, and also blocks no-debt withdrawals that break pairing.
+- `_deposit`: blocks REF vault deposits when debt > 0 and deposit would push REF above cST coverage.
+- `_updateCache() {}`: empty override required by abstract parent.
+
+Constructor takes **8 params**: `(evc, permit2, admin, borrowVault, asset, name, symbol, isRefVault)`. The `borrowVault` is the sUSDe borrow vault address (used for `debtOf` checks). The `bool isRefVault` flag determines which vault type's invariants apply.
+
+Two instances deployed: `isRefVault=true` for vbUSDC vault, `isRefVault=false` for cST vault.
+
+There is NO `balanceOf` override. `balanceOf` returns real shares to all callers. The original Euler POC had an account-encoding trick in `balanceOf` that was incompatible with the liquidation module's yield calculation (see `firstprinciples.md` FP-1). It was removed.
+
+**2. Both vaults need `setPairedVault` called post-deploy -- in BOTH directions.**
+```
+vbUSDCVault.setPairedVault(cSTVault)   // REF vault needs cST vault for coverage checks
+cSTVault.setPairedVault(vbUSDCVault)   // cST vault needs REF vault for no-debt pairing check
+```
+The deployment script Phase 5 handles this automatically. If either call fails, run manually. Governor-only call.
+
+**3. The oracle return formula in old specs is wrong. The correct formula is `/1e6` not `/1e18`.**
+vbUSDC is 6 decimals. `effectiveUsdPerToken` is USD per 1 full token (1e6 units) in 18-decimal WAD. Dividing by `1e18` gives USD in 6-decimal precision -- wrong. The correct return is `inAmount * effectiveUsdPerToken / 1e6`.
+
+**4. CorkOracleImpl is a standard BaseAdapter. No per-account logic.**
+The oracle prices vbUSDC in USD using `min(NAV, swapRate * sUsdeUsd * (1-fee) * hPool)`. It takes `inAmount` (real vbUSDC shares) and returns USD value. There is no account lookup, no cST coverage cap, no `CorkOracle` interface. The hook enforces 1:1 cST/REF pairing, making per-account coverage checks redundant.
+
+`CorkCustomRiskManagerOracle` (Euler's POC Layer 1 oracle) is NOT used. It remains in the repo as a historical artifact but is not referenced by any deployed contract or script.
+
+**5. EulerRouter Phase 4 needs `govSetResolvedVault` for BOTH collateral vaults.**
+```solidity
+router.govSetResolvedVault(vbUSDCVault, true);  // resolves vault shares to vbUSDC via convertToAssets
+router.govSetResolvedVault(cSTVault, true);     // resolves vault shares to cST via convertToAssets
+```
+Without these, the router cannot route `vbUSDCVault/USD` or `cSTVault/USD` queries. The router calls `convertToAssets` on the vault, gets the underlying token amount, then hits the token-level oracle (CorkOracleImpl for vbUSDC, CSTZeroOracle for cST).
+
+**6. The deployment script is a standalone `Script.sol`, NOT based on `ManageCluster.s.sol`.**
+`euler-price-oracle-cork` is NOT a dependency of `evk-periphery-cork`. The oracle contracts (CorkOracleImpl, CSTZeroOracle) must be deployed separately first, then their addresses fed into the main script as env vars. The script is at `evk-periphery-cork/script/production/mainnet/clusters/CorkProtectedLoop.s.sol`.
+
+**7. `swapFee(poolId)` scale is NOT traditional bps. It uses `1e18 = 1% = 100 bps`.**
+So `5e16 = 0.05% = 5 bps`. The formula `feeBps * 1e16 / 1e18 = feeBps / 100` converts to WAD fraction. This looks wrong but is correct. Confirmed against `MathHelper.calculatePercentageFee` which divides by `100e18`.
+
+**8. ProtectedLoopHook is only attached to the borrow vault (sUSDe), not the collateral vaults.**
+The collateral vaults (`ERC4626EVCCollateral`) do not expose `setHookConfig`. The withdraw/deposit protections for collateral vaults are handled via `_withdraw`/`_deposit` overrides directly in `ERC4626EVCCollateralCork`, not via external hook. The hook (`OP_BORROW=64` on sUSDe vault) only gates the borrow operation. It checks: REF > 0, cST > 0, cST >= REF * 1e12 (1:1 pairing), cST not expired.
+
+**9. Liquidator debt repayment is the bot's responsibility, not the contract's.**
+`CorkProtectedLoopLiquidator._customLiquidation` seizes collateral, pulls debt to the operator via `pullDebt`, exercises in Cork, and sends all proceeds to `receiver`. The calling bot must repay the debt in the same EVC batch. This matches the `SBLiquidator` pattern. The contract enforces `collateral == refVault` via a require.
+
+**10. Three spec gaps remain — blocked on CorkSeriesRegistry (not yet built by Cork).**
+- H_pool does NOT auto-reduce near expiry. Mitigation: governor manually calls `CorkOracleImpl.setHPool(0)` before April 19, 2026.
+- Borrow restriction within `liqWindow` not implemented.
+- Rollover exception not implemented.
+These cannot be built until Cork delivers `CorkSeriesRegistry`.
+
+### Cork Whitelist — Hard External Dependency (Act Before Deploying)
+
+Every external function on CorkPoolManager is gated by `_onlyWhitelisted(poolId, _msgSender())`. Before any on-chain testing is possible:
+1. Deployer EOA `0x5304ebB378186b081B99dbb8B6D17d9005eA0448` must be whitelisted to mint test cST
+2. `CorkProtectedLoopLiquidator` contract address must be whitelisted to call `exercise()`
+
+Both require Cork governance to call `WhitelistManager.addToMarketWhitelist(poolId, address)`. Coordinate with Cork team FIRST -- without this, no pool interaction of any kind is possible.
+
+### Foundry Build — How to Compile Without Errors
+
+Both repos have pre-existing missing submodules (Pendle, Pyth, Redstone, Uniswap, permit2) that cause `forge build` to fail on full builds. These are unrelated to the Cork contracts.
+
+```bash
+# Oracle contracts (euler-price-oracle-cork)
+cd euler-price-oracle-cork
+forge build src/adapter/cork/CorkOracleImpl.sol src/adapter/cork/CSTZeroOracle.sol
+
+# Vault/hook/liquidator (evk-periphery-cork)
+cd evk-periphery-cork
+forge build src/Vault/deployed/ERC4626EVCCollateralCork.sol
+forge build src/HookTarget/ProtectedLoopHook.sol
+forge build src/Liquidator/CorkProtectedLoopLiquidator.sol
+forge build script/production/mainnet/clusters/CorkProtectedLoop.s.sol
+```
+
+**If submodules aren't initialized:**
+```bash
+# euler-price-oracle-cork
+cd euler-price-oracle-cork
+git submodule update --init lib/forge-std lib/ethereum-vault-connector lib/openzeppelin-contracts lib/solady
+
+# evk-periphery-cork
+cd evk-periphery-cork
+git submodule update --init lib/euler-vault-kit lib/ethereum-vault-connector lib/openzeppelin-contracts lib/forge-std
+```
+
+**Exit code 0 = compile success**, even when unrelated library errors appear in the output. Those are pre-existing and harmless.
+
+### Key Source Contracts (read before modifying)
+
+**Oracle layer** (`euler-price-oracle-cork/`):
+- `src/adapter/cork/CorkOracleImpl.sol` -- Standard BaseAdapter pricing vbUSDC/USD via Cork pool parameters
+- `src/adapter/cork/CSTZeroOracle.sol` -- Standard BaseAdapter returning 0 for cST/USD
+- `src/adapter/BaseAdapter.sol` -- Base for both Cork oracles
+- `src/EulerRouter.sol` -- Router; `govSetConfig`, `govSetResolvedVault`
+- `src/interfaces/IPriceOracle.sol` -- `getQuote(inAmount, base, quote)` interface
+- `src/adapter/cork/CorkCustomRiskManagerOracle.sol` -- **NOT USED.** Euler's POC file with account-encoding logic. Historical artifact only.
+
+**Vault + Hook + Liquidator layer** (`evk-periphery-cork/`):
+- `src/Vault/deployed/ERC4626EVCCollateralCork.sol` -- Collateral vault with pairing overrides (8-param constructor)
+- `src/Vault/deployed/ERC4626EVCCollateralSecuritize.sol` -- Reference for constructor pattern
+- `src/Vault/implementation/ERC4626EVCCollateralCapped.sol` -- Parent: governor, supply cap, reentrancy
+- `src/Vault/implementation/ERC4626EVC.sol` -- Grandparent: EVC-aware ERC4626, permit2, VIRTUAL_AMOUNT
+- `src/HookTarget/BaseHookTarget.sol` -- Base for ProtectedLoopHook; `_msgSender()` extracts caller from calldata tail
+- `src/Liquidator/CustomLiquidatorBase.sol` -- Base for liquidator; `_customLiquidation` is the override point
+- `src/Liquidator/SBLiquidator.sol` -- Reference liquidator (seize -> redeem -> custom path -> transfer)
+
+**Core EVK** (`euler-vault-kit/`):
+- `src/EVault/shared/Base.sol` -- `invokeHookTarget` appends caller as 20 bytes; hook fires before operation
+- `src/EVault/shared/Constants.sol` -- `OP_BORROW=64`, `OP_WITHDRAW=4`, `OP_REDEEM=8`
+- `src/EVault/IEVault.sol` -- `debtOf()`, `liquidate()`, `setHookConfig()`, `setLTV()`, `setCaps()`
+- `src/GenericFactory/GenericFactory.sol` -- `createProxy(impl, upgradeable, trailingData)`; `isProxy()` used by hook
+
+**EVC** (`ethereum-vault-connector/`):
+- `src/interfaces/IEthereumVaultConnector.sol` -- `batch()` for liquidation
+
+**Cork Protocol** (`phoenix/`):
+- `contracts/interfaces/IPoolManager.sol` -- `exercise()`, `swapRate()`, `swapFee()`, `MarketId` type
+- `contracts/interfaces/IPoolShare.sol` -- `expiry()`, `isExpired()` (cST token interface)
+- `contracts/core/CorkPoolManager.sol` -- All functions whitelisted
+- `contracts/libraries/MathHelper.sol` -- `calculateDepositAmountWithSwapRate`: `refIn = cstShares * 1e18 / swapRate`
+
+### Interface Notes
+
+- `MarketId` is `type MarketId is bytes32` from `IPoolManager.sol`
+- `IPriceOracle` from `euler-price-oracle-cork/src/interfaces/IPriceOracle.sol` -- standard `getQuote(inAmount, base, quote)` interface used by both Cork oracles
+- cST `expiry()` / `isExpired()` come from `IPoolShare` (`phoenix/contracts/interfaces/IPoolShare.sol`)
