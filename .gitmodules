@@ -10,3 +10,6 @@
 [submodule "phoenix"]
 	path = phoenix
 	url = https://github.com/Cork-Technology/phoenix.git
+[submodule "cork-labels"]
+	path = cork-labels
+	url = https://github.com/rootdraws/ag-euler-cork-labels.git
