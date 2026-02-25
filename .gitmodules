@@ -7,3 +7,12 @@
 [submodule "phoenix"]
 	path = reference/phoenix
 	url = https://github.com/Cork-Technology/phoenix.git
+[submodule "reference/ethereum-vault-connector"]
+	path = reference/ethereum-vault-connector
+	url = https://github.com/euler-xyz/ethereum-vault-connector.git
+[submodule "reference/euler-interfaces"]
+	path = reference/euler-interfaces
+	url = https://github.com/euler-xyz/euler-interfaces.git
+[submodule "reference/euler-vault-scripts"]
+	path = reference/euler-vault-scripts
+	url = https://github.com/euler-xyz/euler-vault-scripts.git
