@@ -65,8 +65,10 @@ AG-Euler/
 └── MONOREPO.md
 ```
 
-Labels repos remain standalone GitHub repos — `euler-lite` fetches them at runtime via:
+Labels repos are standalone GitHub repos managed independently — NOT submodules of this repo. `euler-lite` fetches them at runtime via:
 `https://raw.githubusercontent.com/<repo>/refs/heads/<branch>/<chainId>/products.json`
+
+Reference repos (`euler-lite`, `euler-vault-kit`, `euler-labels`, `phoenix`) are submodules — pinned upstream sources for context. Clone with `git clone --recurse-submodules` to get everything.
 
 ---
 
