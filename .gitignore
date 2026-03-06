@@ -1,1 +1,36 @@
+# --- Environment Variables (API Keys & Secrets) ---
+.env
+.env.local
+.env.*.local
+
+# --- AI Config (Local Continue Settings) ---
+.continue/
+
+# --- Solana Keys (Prevent accidental project inclusion) ---
+**/.config/solana/
+**/.solana/
+**/id.json
+
+# --- Dependencies & Build Artifacts ---
+node_modules/
+.output/
+.nuxt/
+dist/
+
+# --- IDE & Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS Files ---
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+npm-debug.log*
+
+# --- Frontend Repos (each has its own .git) ---
 euler-lite/
+euler-lite-cork/

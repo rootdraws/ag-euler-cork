@@ -13,7 +13,7 @@ git clone --recurse-submodules https://github.com/rootdraws/ag-euler.git
 | Partner | URL | Contracts | Status |
 |---|---|---|---|
 | Cork Protocol | [cork.alphagrowth.fun](https://cork.alphagrowth.fun) | [cork-contracts/](cork-contracts/) | Live |
-| Balancer | balancer.alphagrowth.fun | balancer/ | Planned |
+| Balancer | balancer.alphagrowth.fun | [balancer-contracts/](balancer-contracts/) | Contracts Deployed |
 
 ---
 
@@ -35,7 +35,10 @@ AG-Euler/
 │   ├── euler-vault-scripts/
 │   └── phoenix/
 ├── euler-lite/              ← frontend (independent repo → rootdraws/ag-euler-lite)
-├── cork-TODO.md             ← Cork post-deployment tasks
+├── balancer-contracts/      ← Balancer BPT vault deployment (Monad, chain 143)
+│   ├── script/              ← 6 deployment scripts
+│   └── balancer-claude.md
+├── TODO.md                  ← consolidated task tracker (all partners)
 ├── claude.md                ← AG-wide frontend context
 └── README.md
 ```
@@ -123,8 +126,8 @@ Reference repos (`euler-vault-kit`, `ethereum-vault-connector`, `euler-interface
 - [ ] Set `NUXT_PUBLIC_CONFIG_LABELS_REPO=rootdraws/ag-euler-<partner>-labels` in Vercel
 
 **Docs:**
-- [ ] Add `<partner>-TODO.md` at repo root
-- [ ] Add `<partner>/contracts/<partner>-implementation.md` and `<partner>-claude.md`
+- [ ] Add partner section to `TODO.md` at repo root
+- [ ] Add `<partner>-contracts/<partner>-claude.md` with deployment learnings
 
 ---
 
